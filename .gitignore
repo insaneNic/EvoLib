@@ -1,0 +1,6 @@
+imgs/
+interpreter/
+.idea/inspectionProfiles/profiles_settings.xml
+backend/__pycache__/
+saves/
+.idea/
