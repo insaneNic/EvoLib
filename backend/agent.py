@@ -146,6 +146,7 @@ class TrainGroup:
 		plt.figure(figsize = (10, 8))
 		plt.xlim(-bounds, bounds)
 		plt.ylim(-bounds, bounds)
+
 		points = np.stack([agt.get_proj() for agt in self.all_agents])
 		scat = plt.scatter(points[:, 0], points[:, 1], c = self.recent_score)
 		plt.legend(*scat.legend_elements(), loc = 'upper left')
@@ -154,6 +155,15 @@ class TrainGroup:
 		else:
 			plt.savefig(save_name)
 			plt.close()
+
+	def plot_agents_3d(self):
+		fig = plt.figure()
+		ax = plt.axes(projection = '3d')
+
+		points = np.stack([agt.get_proj(3) for agt in self.all_agents])
+		scat = ax.scatter(points[:, 0], points[:, 1], points[:, 2], c = self.recent_score)
+		ax.legend(*scat.legend_elements(), loc = 'upper left')
+		plt.show()
 
 
 if __name__ == '__main__':

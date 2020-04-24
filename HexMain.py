@@ -6,11 +6,11 @@ game = HexGame(5)
 
 group = TrainGroup(game, 81, 7, [game.hexNum, 80, 80, 80, game.hexNum], softmax, 3.)
 
-group.training(50, stay_prob = 0.5,
+group.training(96, stay_prob = 0.5,
 			   shake_eps = 0.2, shake_decay = 0.96,
 			   save_img = True, bounds = 0.05)
 
-group.plot_agents()
+group.plot_agents_3d()
 
 ind = np.argpartition(-group.recent_score, 2)
 

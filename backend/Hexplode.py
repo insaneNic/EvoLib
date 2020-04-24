@@ -1,6 +1,8 @@
 import numpy as np
 from backend import game
-
+# import multiprocessing as mp
+from joblib import Parallel, delayed
+# import threading
 
 class HexBoard(object):
 	def __init__(self, size):
@@ -128,16 +130,16 @@ class HexGame(game.Game):
 
 	def play(self, players):
 		score = np.zeros(len(players))
-		for n, agtA in enumerate(players):
-			print("\rRow " + str(n), end = '')
-			for _ in range(4):
-				agtB = np.random.choice(players, 1)[0]
-				win = self.play_once_safe(agtA, agtB, 0)
-				score[n] += win
+		with Parallel(n_jobs = 16, prefer = 'threads') as parallel:
+			for n, agtA in enumerate(players):
+				print("\rRow " + str(n), end = '')
 
-				agtB = np.random.choice(players, 1)[0]
-				win = self.play_once_safe(agtB, agtA, 1)
-				score[n] += (-1) * win
+				enemy_agents = np.random.choice(players, 6, replace = False)
+				rev_enemy_agents = np.random.choice(players, 6, replace = False)
+				wins = parallel(delayed(self.play_once_safe)(agtA, agtB, 0) for agtB in enemy_agents)
+				neg_wins = parallel(delayed(self.play_once_safe)(agtB, agtA, 1) for agtB in rev_enemy_agents)
+
+				score[n] += (-1) * np.sum(neg_wins) + np.sum(wins)
 		print()
 		return score
 
