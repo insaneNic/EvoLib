@@ -52,10 +52,10 @@ class Agent:
 		for k, weights in enumerate(self.weights):
 			self.weights[k] = self.weights[k] + epsilon * \
 							  np.random.normal(size = self.weights[k].shape) * \
-							  np.random.binomial(n = 1, p = 0.2, size = self.weights[k].shape)
+							  np.random.binomial(n = 1, p = 0.3, size = self.weights[k].shape)
 			self.bias[k] = self.bias[k] + epsilon * \
 						   np.random.normal(size = self.bias[k].shape) * \
-						   np.random.binomial(n = 1, p = 0.2, size = self.bias[k].shape)
+						   np.random.binomial(n = 1, p = 0.3, size = self.bias[k].shape)
 
 	def get_norm(self):
 		return np.linalg.norm(np.concatenate(list(map(np.ravel, self.weights))))
@@ -69,7 +69,7 @@ class Agent:
 			os.mkdir('saves')
 
 		data = {'layer_sizes': self.layerSizes, 'weights': self.weights, 'bias': self.bias}
-		dump(data, 'saves/' + filename + '.json')
+		dump(data, 'saves/' + filename + '.json', separators = (',\n', ': '))
 
 	def load_weights(self, filename = 'agent'):
 		data = load('saves/' + filename + '.json', preserve_order = False)

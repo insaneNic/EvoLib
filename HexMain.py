@@ -6,8 +6,8 @@ game = HexGame(5)
 
 group = TrainGroup(game, 81, 7, [game.hexNum, 80, 80, 80, game.hexNum], softmax, 3.)
 
-group.training(96, stay_prob = 0.5,
-			   shake_eps = 0.2, shake_decay = 0.96,
+group.training(36, stay_prob = 0.4,
+			   shake_eps = 0.2, shake_decay = 0.98,
 			   save_img = True, bounds = 0.05)
 
 group.plot_agents_3d()
@@ -20,6 +20,11 @@ print(group.recent_score[ind])
 agtA = group.all_agents[ind[0]]
 agtB = group.all_agents[ind[1]]
 
+print("Best v Best:")
+game.play_once_print(agtA, agtA)
+
+print('\n---------')
+print("Best v 2nd Best")
 game.play_once_print(agtA, agtB)
 
 HB = HexBoard(5)

@@ -2,7 +2,7 @@ import numpy as np
 from backend import game
 # import multiprocessing as mp
 from joblib import Parallel, delayed
-# import threading
+
 
 class HexBoard(object):
 	def __init__(self, size):
@@ -129,46 +129,77 @@ class HexGame(game.Game):
 		self.hexNum = 3 * borSize ** 2 - 3 * borSize + 1
 
 	def play(self, players):
-		score = np.zeros(len(players))
-		with Parallel(n_jobs = 16, prefer = 'threads') as parallel:
-			for n, agtA in enumerate(players):
-				print("\rRow " + str(n), end = '')
+		# score = np.zeros(len(players))
+		with Parallel(n_jobs = len(players), prefer = 'threads', verbose = 1) as parallel:
+			# for n, agtA in enumerate(players):
+			winsA = parallel(delayed(self.play_random_enemies)(agtA, players, side = 1, num_en = 4) for agtA in players)
+			winsB = parallel(delayed(self.play_random_enemies)(agtA, players, side =-1, num_en = 4) for agtA in players)
+			winsS = parallel(delayed(self.play_self_safe)(agt) for agt in players)
+		return np.array(winsA) + np.array(winsB) + np.array(winsS)
 
-				enemy_agents = np.random.choice(players, 6, replace = False)
-				rev_enemy_agents = np.random.choice(players, 6, replace = False)
-				wins = parallel(delayed(self.play_once_safe)(agtA, agtB, 0) for agtB in enemy_agents)
-				neg_wins = parallel(delayed(self.play_once_safe)(agtB, agtA, 1) for agtB in rev_enemy_agents)
+	def play_random_enemies(self, agtA, enemy_pool, side = 0, num_en = 5):
+		enemy_agents = np.random.choice(enemy_pool, num_en, replace = False)
+		if side == 1:
+			wins = [self.play_once_safe(agtA, agtB)[0] for agtB in enemy_agents]
+		else:
+			wins = [(-1) * self.play_once_safe(agtB, agtA)[1] for agtB in enemy_agents]
+		return np.sum(wins)
 
-				score[n] += (-1) * np.sum(neg_wins) + np.sum(wins)
-		print()
-		return score
-
-	def play_once_safe(self, agtA, agtB, who = 0):  # play with upper limit on moves
+	def play_self_safe(self, agt):
 		HB = HexBoard(self.bSize)
 		numTurns = 0
-		while HB.checkWin() == 0 and numTurns < 100:
+		while HB.checkWin() == 0 and numTurns < 80:
+			if numTurns >= 2:
+				return 1
+			# Move performed by i
+			yHat = agt.forward(HB.linearBoard())
+			linMove = np.argmax(yHat)
+			coo = HB.cooFromLinSpace(linMove)
+			if HB.move(coo[0], coo[1]):
+				return -2
+
+			if HB.checkWin() > 0:
+				return 0.1
+
+			# Move performed by j
+			yHat = agt.forward([(-1) * i for i in HB.linearBoard()])
+			linMove = np.argmax(yHat)
+			coo = HB.cooFromLinSpace(linMove)
+			if HB.move(coo[0], coo[1]):
+				return -2
+
+			if HB.checkWin() < 0:
+				return 0.1
+
+			numTurns += 1
+		return 1
+
+	def play_once_safe(self, agtA, agtB):  # play with upper limit on moves
+		HB = HexBoard(self.bSize)
+		numTurns = 0
+		while HB.checkWin() == 0 and numTurns < 80:
 			# Move performed by i
 			yHat = agtA.forward(HB.linearBoard())
 			linMove = np.argmax(yHat)
 			coo = HB.cooFromLinSpace(linMove)
 			if HB.move(coo[0], coo[1]):
-				return -1
+				return -2 * (1 - numTurns / 100), 0
 
 			if HB.checkWin() > 0:
-				return HB.checkWin() * 2
+				return 1.1, -1
 
 			# Move performed by j
 			yHat = agtB.forward([(-1) * i for i in HB.linearBoard()])
 			linMove = np.argmax(yHat)
 			coo = HB.cooFromLinSpace(linMove)
 			if HB.move(coo[0], coo[1]):
-				return 1
+				return 0, -2 * (1 - numTurns / 100)
 
 			if HB.checkWin() < 0:
-				return HB.checkWin() * 2
+				return -1, 1.1
 
 			numTurns += 1
-		return HB.checkWin() * 2
+		return 1 + HB.checkWin(), 1 + HB.checkWin()
 
 	def play_once_print(self, agtA, agtB):  # play with upper limit on moves
 		HB = HexBoard(self.bSize)
