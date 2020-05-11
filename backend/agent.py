@@ -13,11 +13,11 @@ def agent_dist(agA, agB):
 
 
 class Agent:
-	def __init__(self, sizes, final_active = lambda x: x, init_spread = 1.0):
+	def __init__(self, layer_sizes, final_active = lambda x: x, init_spread = 1.0):
 		self.nbhd_agents = []
 
 		# Define HyperParameters
-		self.layerSizes = sizes
+		self.layerSizes = layer_sizes
 		self.final_active = final_active
 
 		# Weights
@@ -52,10 +52,10 @@ class Agent:
 		for k, weights in enumerate(self.weights):
 			self.weights[k] = self.weights[k] + epsilon * \
 							  np.random.normal(size = self.weights[k].shape) * \
-							  np.random.binomial(n = 1, p = 0.2, size = self.weights[k].shape)
+							  np.random.binomial(n = 1, p = 0.3, size = self.weights[k].shape)
 			self.bias[k] = self.bias[k] + epsilon * \
 						   np.random.normal(size = self.bias[k].shape) * \
-						   np.random.binomial(n = 1, p = 0.2, size = self.bias[k].shape)
+						   np.random.binomial(n = 1, p = 0.3, size = self.bias[k].shape)
 
 	def get_norm(self):
 		return np.linalg.norm(np.concatenate(list(map(np.ravel, self.weights))))
@@ -69,7 +69,7 @@ class Agent:
 			os.mkdir('saves')
 
 		data = {'layer_sizes': self.layerSizes, 'weights': self.weights, 'bias': self.bias}
-		dump(data, 'saves/' + filename + '.json')
+		dump(data, 'saves/' + filename + '.json', separators = (',\n', ': '))
 
 	def load_weights(self, filename = 'agent'):
 		data = load('saves/' + filename + '.json', preserve_order = False)
@@ -80,12 +80,17 @@ class Agent:
 
 
 class TrainGroup:
-	def __init__(self, game, num_agents, nbhd_size, *args):
+	def __init__(self, game, num_agents, nbhd_size, init_file = None, *args, **kwargs):
 		# First we generate the agents, should be at least 100
-		self.all_agents = [Agent(*args) for _ in range(num_agents)]
+		self.all_agents = [Agent(*args, **kwargs) for _ in range(num_agents)]
 		self.num_agents = num_agents
 		self.recent_score = np.zeros(num_agents)
 		self.nbhd_size = nbhd_size
+
+		if isinstance(init_file, str):
+			for agt in self.all_agents:
+				agt.load_weights(init_file)
+				agt.shake()
 
 		self.game = game
 
@@ -132,12 +137,19 @@ class TrainGroup:
 
 	def training(self, num_steps, stay_prob = 0.8,
 				 shake_eps = 0.01, shake_decay = 0.99,
-				 save_img = False, bounds = 0.02):
+				 save_img = False, bounds = 0.02,
+				 inter_saving = None):
 		for k in range(num_steps):
 			if save_img:
 				self.plot_agents(show = False, bounds = bounds, save_name = "./imgs/epoch{0:2}".format(k))
 			print("Started " + str(k))
 			if k % 5 == 0:
+				# Savin the best agent weights
+				if isinstance(inter_saving, str):
+					ind = np.argpartition(-self.recent_score, 1)
+					best_agt = self.all_agents[ind[0]]
+					best_agt.save_weights(inter_saving)
+
 				self.update_nbhds()
 				shake_eps = shake_eps * shake_decay
 			self.train_step(stay_prob, shake_eps)

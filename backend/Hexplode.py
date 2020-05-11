@@ -1,15 +1,16 @@
 import numpy as np
 from backend import game
+from backend.funcs import softmax
 # import multiprocessing as mp
 from joblib import Parallel, delayed
-# import threading
+
 
 class HexBoard(object):
 	def __init__(self, size):
 		self.size = size
 		self.turnNum = 0
 		self.maSize = 2 * size - 1
-		self.board = np.zeros((self.maSize, self.maSize))
+		self.board = np.zeros((self.maSize, self.maSize)).astype(np.int)
 
 	def newGame(self):
 		self.turnNum = 0
@@ -28,9 +29,6 @@ class HexBoard(object):
 					return "enemy stone"
 			else:
 				return "out of bounds"
-		if self.checkWin() == -1:
-			return "neg wins"
-		return "pos wins"
 
 	def checkWin(self):
 		if self.turnNum >= 2:
@@ -124,51 +122,98 @@ class HexBoard(object):
 
 
 class HexGame(game.Game):
-	def __init__(self, borSize):
-		self.bSize = borSize
-		self.hexNum = 3 * borSize ** 2 - 3 * borSize + 1
+	def __init__(self, board_size):
+		self.bSize = board_size
+		self.hexNum = 3 * board_size ** 2 - 3 * board_size + 1
+		self.board = HexBoard(board_size)
+		self.turn = 0
 
 	def play(self, players):
-		score = np.zeros(len(players))
-		with Parallel(n_jobs = 16, prefer = 'threads') as parallel:
-			for n, agtA in enumerate(players):
-				print("\rRow " + str(n), end = '')
+		# score = np.zeros(len(players))
+		with Parallel(n_jobs = len(players), prefer = 'threads', verbose = 1) as parallel:
+			# for n, agtA in enumerate(players):
+			winsA = parallel(delayed(self.play_random_enemies)(agtA, players, side = 1, num_en = 5) for agtA in players)
+			winsB = parallel(delayed(self.play_random_enemies)(agtA, players, side =-1, num_en = 5) for agtA in players)
+		return np.array(winsA) + np.array(winsB)
 
-				enemy_agents = np.random.choice(players, 6, replace = False)
-				rev_enemy_agents = np.random.choice(players, 6, replace = False)
-				wins = parallel(delayed(self.play_once_safe)(agtA, agtB, 0) for agtB in enemy_agents)
-				neg_wins = parallel(delayed(self.play_once_safe)(agtB, agtA, 1) for agtB in rev_enemy_agents)
+	def play_random_enemies(self, agtA, enemy_pool, side = 0, num_en = 5):
+		enemy_agents = np.random.choice(enemy_pool, num_en, replace = False)
+		if side == 1:
+			wins = [self.play_once_safe(agtA, agtB)[0] for agtB in enemy_agents]
+		else:
+			wins = [self.play_once_safe(agtB, agtA)[1] for agtB in enemy_agents]
+		return np.sum(wins)
 
-				score[n] += (-1) * np.sum(neg_wins) + np.sum(wins)
-		print()
-		return score
-
-	def play_once_safe(self, agtA, agtB, who = 0):  # play with upper limit on moves
+	def play_once_safe(self, agtA, agtB):  # play with upper limit on moves
 		HB = HexBoard(self.bSize)
 		numTurns = 0
-		while HB.checkWin() == 0 and numTurns < 100:
-			# Move performed by i
-			yHat = agtA.forward(HB.linearBoard())
+		while HB.checkWin() == 0 and numTurns < 80:
+
+			# Move by A
+			# Get linearized board
+			linBoard = HB.linearBoard()
+			# Calculate illegal moves
+			invalid_moves = np.array([100. * ((p >= 0) - 1) for p in linBoard])
+			# Agent Calculates move
+			yHat = softmax(agtA.forward(linBoard).squeeze() + invalid_moves)
+			# Get arg max
 			linMove = np.argmax(yHat)
+			# Coordinate Transformation
 			coo = HB.cooFromLinSpace(linMove)
-			if HB.move(coo[0], coo[1]):
-				return -1
+			# Move
+			HB.move(coo[0], coo[1])
 
 			if HB.checkWin() > 0:
-				return HB.checkWin() * 2
+				return 1.1, -1.
 
-			# Move performed by j
-			yHat = agtB.forward([(-1) * i for i in HB.linearBoard()])
+			# Move by B
+			# Get linearized board * (-1)
+			linBoard = [(-1) * i for i in HB.linearBoard()]
+			# Calculate illegal moves
+			invalid_moves = np.array([100. * ((p >= 0) - 1) for p in linBoard])
+			# Agent calculates move
+			yHat = softmax(agtB.forward(linBoard).squeeze() + invalid_moves)
+			# Get arg max
+			linMove = np.argmax(yHat)
+			# Coordinate Transformation
+			coo = HB.cooFromLinSpace(linMove)
+			# Move
+			HB.move(coo[0], coo[1])
+
+			if HB.checkWin() < 0:
+				return -1., 1.1
+
+			numTurns += 1
+		return 1 + np.sum(HB.board)/30., 1 - np.sum(HB.board)/30.
+
+	def play_self_safe(self, agt):
+		HB = HexBoard(self.bSize)
+		numTurns = 0
+		while HB.checkWin() == 0 and numTurns < 80:
+			if numTurns >= 2:
+				return 1
+			# Move performed by i
+			yHat = agt.forward(HB.linearBoard())
 			linMove = np.argmax(yHat)
 			coo = HB.cooFromLinSpace(linMove)
 			if HB.move(coo[0], coo[1]):
-				return 1
+				return -2
+
+			if HB.checkWin() > 0:
+				return 0.1
+
+			# Move performed by j
+			yHat = agt.forward([(-1) * i for i in HB.linearBoard()])
+			linMove = np.argmax(yHat)
+			coo = HB.cooFromLinSpace(linMove)
+			if HB.move(coo[0], coo[1]):
+				return -2
 
 			if HB.checkWin() < 0:
-				return HB.checkWin() * 2
+				return 0.1
 
 			numTurns += 1
-		return HB.checkWin() * 2
+		return 1
 
 	def play_once_print(self, agtA, agtB):  # play with upper limit on moves
 		HB = HexBoard(self.bSize)
@@ -176,14 +221,13 @@ class HexGame(game.Game):
 		while HB.checkWin() == 0 and numTurns < 100:
 			# Move performed by i
 			linBoard = HB.linearBoard()
-			yHat = agtA.forward(linBoard)
+			invalid_moves = np.array([100. * ((p >= 0) - 1) for p in linBoard])
+			yHat = softmax(agtA.forward(linBoard).squeeze() + invalid_moves)
 			linMove = np.argmax(yHat)
 			coo = HB.cooFromLinSpace(linMove)
-			if HB.move(coo[0], coo[1]):
-				print("i lost by invalid move")
-				print(coo)
-				return -1
-			print("Move i:")
+			HB.move(coo[0], coo[1])
+
+			print("Move A:")
 			print(HB.board)
 			print()
 			if HB.checkWin() > 0:
@@ -191,14 +235,15 @@ class HexGame(game.Game):
 
 			# Move performed by j
 			linBoard = [(-1) * i for i in HB.linearBoard()]  # *(-1) So the NN sees enemy as negative
-			yHat = agtB.forward(linBoard)
+			invalid_moves = np.array([100. * ((p >= 0) - 1) for p in linBoard])
+			yHat = softmax(agtB.forward(linBoard).squeeze() + invalid_moves)
 			linMove = np.argmax(yHat)
 			coo = HB.cooFromLinSpace(linMove)
 			if HB.move(coo[0], coo[1]):
 				print("j lost by invalid move")
 				print(coo)
 				return 1
-			print("Move j:")
+			print("Move B:")
 			print(HB.board)
 			print()
 
@@ -207,3 +252,34 @@ class HexGame(game.Game):
 
 			numTurns += 1
 		return HB.checkWin()
+
+
+class HexIterGame():
+	def __init__(self, board_size):
+		self.bSize = board_size
+		self.hexNum = 3 * board_size ** 2 - 3 * board_size + 1
+		self.board = HexBoard(board_size)
+		self.turn = 0
+
+	def agent_move(self, agent):
+		if self.turn % 2 == 0:
+			linBoard = self.board.linearBoard()
+		else:
+			linBoard = [(-1) * p for p in self.board.linearBoard()]
+		invalid_moves = np.array([100. * ((p >= 0) - 1) for p in linBoard])
+		yHat = softmax(agent.forward(linBoard).squeeze() + invalid_moves)
+		linMove = np.argmax(yHat)
+		coo = self.board.cooFromLinSpace(linMove)
+		self.board.move(coo[0], coo[1])
+		self.turn += 1
+		return 0
+
+	def human_move(self, move):
+		coo = self.board.cooFromLinSpace(move)
+		if self.board.move(coo[0], coo[1]):
+			return 1
+		self.turn += 1
+		return 0
+
+	def get_lin_board(self):
+		return self.board.linearBoard()
