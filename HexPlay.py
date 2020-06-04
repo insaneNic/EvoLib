@@ -44,7 +44,7 @@ pos_list = [np.array(pos) for row in pos_list for pos in row]
 
 # Loading agent
 agent = Agent([], softmax)
-agent.load_weights('new_best')
+agent.load_weights('all_new')
 
 # Initializing Game
 game = HexIterGame(BOARD_SIZE)

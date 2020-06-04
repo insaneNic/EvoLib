@@ -3,6 +3,8 @@ from backend import game
 from backend.funcs import softmax
 # import multiprocessing as mp
 from joblib import Parallel, delayed
+# from numba import jitclass  # import the decorator
+# from numba import int32, float32
 
 
 class HexBoard(object):
@@ -10,6 +12,7 @@ class HexBoard(object):
 		self.size = size
 		self.turnNum = 0
 		self.maSize = 2 * size - 1
+		self.num_hex = 3 * np.square(size) - 3 * size + 1
 		self.board = np.zeros((self.maSize, self.maSize)).astype(np.int)
 
 	def newGame(self):
@@ -133,7 +136,8 @@ class HexGame(game.Game):
 		with Parallel(n_jobs = len(players), prefer = 'threads', verbose = 1) as parallel:
 			# for n, agtA in enumerate(players):
 			winsA = parallel(delayed(self.play_random_enemies)(agtA, players, side = 1, num_en = 5) for agtA in players)
-			winsB = parallel(delayed(self.play_random_enemies)(agtA, players, side =-1, num_en = 5) for agtA in players)
+			winsB = parallel(
+				delayed(self.play_random_enemies)(agtA, players, side = -1, num_en = 5) for agtA in players)
 		return np.array(winsA) + np.array(winsB)
 
 	def play_random_enemies(self, agtA, enemy_pool, side = 0, num_en = 5):
@@ -147,7 +151,7 @@ class HexGame(game.Game):
 	def play_once_safe(self, agtA, agtB):  # play with upper limit on moves
 		HB = HexBoard(self.bSize)
 		numTurns = 0
-		while HB.checkWin() == 0 and numTurns < 80:
+		while HB.checkWin() == 0 and numTurns < 150:
 
 			# Move by A
 			# Get linearized board
@@ -157,14 +161,14 @@ class HexGame(game.Game):
 			# Agent Calculates move
 			yHat = softmax(agtA.forward(linBoard).squeeze() + invalid_moves)
 			# Get arg max
-			linMove = np.argmax(yHat)
+			linMove = pick_random(yHat)
 			# Coordinate Transformation
 			coo = HB.cooFromLinSpace(linMove)
 			# Move
 			HB.move(coo[0], coo[1])
 
 			if HB.checkWin() > 0:
-				return 1.1, -1.
+				return 3.5, -1.
 
 			# Move by B
 			# Get linearized board * (-1)
@@ -174,17 +178,18 @@ class HexGame(game.Game):
 			# Agent calculates move
 			yHat = softmax(agtB.forward(linBoard).squeeze() + invalid_moves)
 			# Get arg max
-			linMove = np.argmax(yHat)
+			linMove = pick_random(yHat)
 			# Coordinate Transformation
 			coo = HB.cooFromLinSpace(linMove)
 			# Move
 			HB.move(coo[0], coo[1])
 
 			if HB.checkWin() < 0:
-				return -1., 1.1
+				return -1., 3.5
 
 			numTurns += 1
-		return 1 + np.sum(HB.board)/30., 1 - np.sum(HB.board)/30.
+		print("long game")
+		return 1., 1.
 
 	def play_self_safe(self, agt):
 		HB = HexBoard(self.bSize)
@@ -253,6 +258,160 @@ class HexGame(game.Game):
 			numTurns += 1
 		return HB.checkWin()
 
+	def play_once_random(self, agtA, agtB, print_bool = True):  # play with upper limit on moves
+		HB = HexBoard(self.bSize)
+		numTurns = 0
+		while HB.checkWin() == 0 and numTurns < 150:
+			# Move performed by i
+			linBoard = HB.linearBoard()
+			invalid_moves = np.array([1000. * ((p >= 0) - 1) for p in linBoard])
+			yHat = softmax(agtA.forward(linBoard).squeeze() + invalid_moves)
+			linMove = pick_random(yHat)
+			coo = HB.cooFromLinSpace(linMove)
+			HB.move(coo[0], coo[1])
+
+			if print_bool:
+				print("Move A:")
+				print(HB.board)
+				print()
+			if HB.checkWin() > 0:
+				break
+
+			# Move performed by j
+			linBoard = [(-1) * i for i in HB.linearBoard()]  # *(-1) So the NN sees enemy as negative
+			invalid_moves = np.array([1000. * ((p >= 0) - 1) for p in linBoard])
+			yHat = softmax(agtB.forward(linBoard).squeeze() + invalid_moves)
+			linMove = pick_random(yHat)
+			coo = HB.cooFromLinSpace(linMove)
+			if HB.move(coo[0], coo[1]):
+				print("j lost by invalid move")
+				print(coo)
+				return 1
+			if print_bool:
+				print("Move B:")
+				print(HB.board)
+				print()
+
+			if HB.checkWin() < 0:
+				break
+
+			numTurns += 1
+		return HB.checkWin()
+
+	def play_deep_vs_random(self, model):
+		HB = HexBoard(self.bSize)
+		while HB.checkWin() == 0:
+
+			# Move performed by i
+			linBoard = HB.linearBoard()
+
+			invalid_moves = np.array([1000. * ((p >= 0) - 1) for p in linBoard])
+			yHat = softmax(model(np.array(linBoard).reshape((1, HB.num_hex))) + invalid_moves).squeeze()
+			linMove = pick_random(yHat)
+
+			coo = HB.cooFromLinSpace(linMove)
+			HB.move(coo[0], coo[1])
+
+			if HB.checkWin() > 0:
+				break
+
+			# Move performed by j
+			linBoard = [(-1) * i for i in HB.linearBoard()]  # *(-1) So the NN sees enemy as negative
+
+			invalid_moves = np.array([1000. * ((p >= 0) - 1) for p in linBoard])
+			yHat = softmax(np.ones(HB.num_hex) + invalid_moves)
+			linMove = pick_random(yHat)
+
+			coo = HB.cooFromLinSpace(linMove)
+			HB.move(coo[0], coo[1])
+
+			if HB.checkWin() < 0:
+				break
+
+		return HB.checkWin()
+
+
+def get_random_moves(board_size = 5):
+	HB = HexBoard(board_size)
+	numTurns = 0
+	moves = []
+	states = []
+	while HB.checkWin() == 0:
+		# Move performed by i
+		linBoard = HB.linearBoard()
+		states.append(linBoard)
+
+		invalid_moves = np.array([1000. * ((p >= 0) - 1) for p in linBoard])
+		yHat = softmax(np.ones(HB.num_hex) + invalid_moves)
+		linMove = pick_random(yHat)
+		moves.append(linMove)
+
+		coo = HB.cooFromLinSpace(linMove)
+		HB.move(coo[0], coo[1])
+
+		if HB.checkWin() > 0:
+			break
+
+		# Move performed by j
+		linBoard = [(-1) * i for i in HB.linearBoard()]  # *(-1) So the NN sees enemy as negative
+		states.append(linBoard)
+
+		invalid_moves = np.array([1000. * ((p >= 0) - 1) for p in linBoard])
+		yHat = softmax(np.ones(HB.num_hex) + invalid_moves)
+		linMove = pick_random(yHat)
+		moves.append(linMove)
+
+		coo = HB.cooFromLinSpace(linMove)
+		HB.move(coo[0], coo[1])
+
+		if HB.checkWin() < 0:
+			break
+
+		numTurns += 1
+
+	return HB.checkWin(), states, moves
+
+
+def get_deep_moves(model, model_old, board_size = 5):
+	HB = HexBoard(board_size)
+	numTurns = 0
+	moves = []
+	states = []
+	while HB.checkWin() == 0:
+		# Move performed by i
+		linBoard = HB.linearBoard()
+		states.append(linBoard)
+
+		invalid_moves = np.array([1000. * ((p >= 0) - 1) for p in linBoard])
+		yHat = softmax(model(np.array(linBoard).reshape((1, HB.num_hex))) + invalid_moves).squeeze()
+		linMove = pick_random(yHat)
+		moves.append(linMove)
+
+		coo = HB.cooFromLinSpace(linMove)
+		HB.move(coo[0], coo[1])
+
+		if HB.checkWin() > 0:
+			break
+
+		# Move performed by j
+		linBoard = [(-1) * i for i in HB.linearBoard()]  # *(-1) So the NN sees enemy as negative
+		states.append(linBoard)
+
+		invalid_moves = np.array([1000. * ((p >= 0) - 1) for p in linBoard])
+		yHat = softmax(model_old(np.array(linBoard).reshape((1, HB.num_hex))) + invalid_moves).squeeze()
+		linMove = pick_random(yHat)
+		moves.append(linMove)
+
+		coo = HB.cooFromLinSpace(linMove)
+		HB.move(coo[0], coo[1])
+
+		if HB.checkWin() < 0:
+			break
+
+		numTurns += 1
+
+	return HB.checkWin(), states, moves
+
 
 class HexIterGame():
 	def __init__(self, board_size):
@@ -268,7 +427,7 @@ class HexIterGame():
 			linBoard = [(-1) * p for p in self.board.linearBoard()]
 		invalid_moves = np.array([100. * ((p >= 0) - 1) for p in linBoard])
 		yHat = softmax(agent.forward(linBoard).squeeze() + invalid_moves)
-		linMove = np.argmax(yHat)
+		linMove = pick_random(yHat)
 		coo = self.board.cooFromLinSpace(linMove)
 		self.board.move(coo[0], coo[1])
 		self.turn += 1
@@ -283,3 +442,7 @@ class HexIterGame():
 
 	def get_lin_board(self):
 		return self.board.linearBoard()
+
+
+def pick_random(probs):
+	return np.random.choice(range(len(probs)), 1, p = probs)

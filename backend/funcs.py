@@ -1,32 +1,32 @@
 import numpy as np
-from numba import jit
+# from numba import jit
 
 
-@jit(nopython = True)
+# @jit(nopython = True)
 def relu(x):
 	return np.maximum(0, x)
 
 
-@jit(nopython = True)
+# @jit(nopython = True)
 def relu_prime(x):
 	return (np.sign(x) + 1.) / 2
 
-@jit(nopython = True)
+# @jit(nopython = True)
 def linear(x):
 	return x
 
 
-@jit(nopython = True)
+# @jit(nopython = True)
 def logistic(x):
 	return 1. / (1. + np.exp(-x))
 
 
-@jit(nopython = True)
+# @jit(nopython = True)
 def logistic_prime(x):
 	return logistic(x) * (1 - logistic(x))
 
 
-@jit(nopython = True)
+# @jit(nopython = True)
 def softmax(x):
 	val = np.exp(x - 1.) / np.sum(np.exp(x - 1.))
 	return val

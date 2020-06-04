@@ -88,9 +88,10 @@ class TrainGroup:
 		self.nbhd_size = nbhd_size
 
 		if isinstance(init_file, str):
-			for agt in self.all_agents:
+			for i, agt in enumerate(self.all_agents):
 				agt.load_weights(init_file)
-				agt.shake()
+				if i != 0:
+					agt.shake()
 
 		self.game = game
 
@@ -144,7 +145,7 @@ class TrainGroup:
 				self.plot_agents(show = False, bounds = bounds, save_name = "./imgs/epoch{0:2}".format(k))
 			print("Started " + str(k))
 			if k % 5 == 0:
-				# Savin the best agent weights
+				# Saving the best agent weights
 				if isinstance(inter_saving, str):
 					ind = np.argpartition(-self.recent_score, 1)
 					best_agt = self.all_agents[ind[0]]
